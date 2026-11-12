@@ -1,44 +1,102 @@
-// eval.js starter. Fill in the four TODOs, then run: node eval.js
-// You should not need any libraries. Plain Node.js is enough.
+// Evaluate the provided keyword and semantic search rankings with MRR and Recall@10.
+// Run with: node eval.js
 const fs = require('fs');
 
-// --- 1. Load the inputs (already done for you) -----------------------------
-// test-set.csv has a header row, then: query,correct_post_ids
-// correct_post_ids may be a semicolon list, e.g. "1024;1025".
+const K = 10;
+
+function parseCsvLine(line) {
+  const fields = [];
+  let field = '';
+  let quoted = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (quoted && line[i + 1] === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === ',' && !quoted) {
+      fields.push(field);
+      field = '';
+    } else {
+      field += char;
+    }
+  }
+
+  if (quoted) throw new Error(`Unclosed quoted field in CSV row: ${line}`);
+  fields.push(field);
+  return fields;
+}
+
 function loadTestSet(path) {
-  const lines = fs.readFileSync(path, 'utf8').trim().split('\n').slice(1);
-  return lines.map(line => {
-    const [query, ids] = line.split(',');
-    return { query, correctIds: ids.split(';').map(Number) };
+  const lines = fs.readFileSync(path, 'utf8').trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error(`${path} must contain a header and at least one query`);
+
+  return lines.slice(1).map((line, index) => {
+    const [query, ids] = parseCsvLine(line);
+    if (!query || !ids) throw new Error(`Invalid test-set row ${index + 2}: ${line}`);
+    const correctIds = ids.split(';').map(value => Number(value.trim()));
+    if (correctIds.some(id => !Number.isFinite(id))) {
+      throw new Error(`Invalid correct post ID in test-set row ${index + 2}: ${ids}`);
+    }
+    return { query, correctIds };
   });
 }
-const testSet = loadTestSet('test-set.csv');
 
-// search-results.json maps each query to the top-10 ranked post_id lists that
-// each system returned: { "<query>": { keyword: [...], semantic: [...] } }
+const testSet = loadTestSet('test-set.csv');
 const results = JSON.parse(fs.readFileSync('search-results.json', 'utf8'));
 
-// --- 2. TODO: Reciprocal Rank ----------------------------------------------
-// Return 1 / (rank of the FIRST correct id in rankedIds). Return 0 if none of
-// the correct ids appear in rankedIds. Rank is 1-based (first result = rank 1).
-function reciprocalRank(rankedIds, correctIds) {
-  // TODO: implement
-}
-
-// Helper: the 1-based rank of the first correct id, or null if it is a miss.
+// Return the 1-based rank of the first relevant result in the top K, or null.
 function rankOf(rankedIds, correctIds) {
-  // TODO: implement (used only to print the comparison table)
+  const correctIdSet = new Set(correctIds.map(Number));
+  const index = rankedIds.slice(0, K).findIndex(id => correctIdSet.has(Number(id)));
+  return index === -1 ? null : index + 1;
 }
 
-// --- 3. TODO: run the evaluation loop --------------------------------------
-// For every query: look up its keyword and semantic ranked lists, compute the
-// reciprocal rank of each, accumulate the RRs, and count a "hit" whenever the
-// correct answer was found in the top 10 (RR > 0).
-// Then compute:
-//   keywordMRR, semanticMRR         = average RR across all queries
-//   keywordRecall, semanticRecall   = hits / number of queries
+// Reciprocal rank is 1/rank for the first relevant result, or 0 for a miss.
+function reciprocalRank(rankedIds, correctIds) {
+  const rank = rankOf(rankedIds, correctIds);
+  return rank === null ? 0 : 1 / rank;
+}
 
-// --- 4. TODO: print a markdown comparison table ----------------------------
-// Print one row per query: | query | keyword rank | semantic rank |  (use "miss"
-// when the answer was not in the top 10), then a final **Summary** row with
-// MRR and Recall@10 for each system, each rounded to 2 decimals.
+const keywordRRs = [];
+const semanticRRs = [];
+let keywordHits = 0;
+let semanticHits = 0;
+const rows = [];
+
+for (const { query, correctIds } of testSet) {
+  const queryResults = results[query];
+  if (!queryResults || !Array.isArray(queryResults.keyword) || !Array.isArray(queryResults.semantic)) {
+    throw new Error(`Missing keyword or semantic ranked results for query: ${query}`);
+  }
+
+  const keywordRank = rankOf(queryResults.keyword, correctIds);
+  const semanticRank = rankOf(queryResults.semantic, correctIds);
+  const keywordRR = reciprocalRank(queryResults.keyword, correctIds);
+  const semanticRR = reciprocalRank(queryResults.semantic, correctIds);
+
+  keywordRRs.push(keywordRR);
+  semanticRRs.push(semanticRR);
+  if (keywordRR > 0) keywordHits += 1;
+  if (semanticRR > 0) semanticHits += 1;
+
+  rows.push({ query, keywordRank, semanticRank });
+}
+
+const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+const keywordMRR = mean(keywordRRs);
+const semanticMRR = mean(semanticRRs);
+const keywordRecall = keywordHits / testSet.length;
+const semanticRecall = semanticHits / testSet.length;
+const displayRank = rank => rank === null ? 'miss' : String(rank);
+
+console.log('| Query | Keyword rank | Semantic rank |');
+console.log('|---|---|---|');
+for (const { query, keywordRank, semanticRank } of rows) {
+  console.log(`| ${query} | ${displayRank(keywordRank)} | ${displayRank(semanticRank)} |`);
+}
+console.log(`| **Summary** | **MRR ${keywordMRR.toFixed(2)} · Recall@10 ${keywordRecall.toFixed(2)}** | **MRR ${semanticMRR.toFixed(2)} · Recall@10 ${semanticRecall.toFixed(2)}** |`);

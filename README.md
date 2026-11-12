@@ -6,7 +6,7 @@ In this mini project you will implement `eval.js` so it scores two search system
 
 ## What is in this project
 
-- `eval.js` : the file you build. It has four TODOs; the file-loading is done for you.
+- `eval.js` : evaluates keyword and semantic search rankings with reciprocal rank, MRR, and Recall@10, then prints a Markdown comparison table.
 - `test-set.csv` : 10 `(query, correct_post_ids)` pairs. A row may list more than one correct answer, semicolon-separated (for example `1024;1025`).
 - `search-results.json` : for each query, the top-10 ranked `post_id` list each system returned, shaped as `{ "<query>": { "keyword": [...], "semantic": [...] } }`. Array position 0 is rank 1.
 - `posts-dataset.csv` : the 35 posts the ids refer to (for sanity-checking; not required by the core build).
@@ -80,3 +80,8 @@ SELECT post_id FROM posts ORDER BY embedding <=> $1 LIMIT 10;
 ```
 
 Wire each into `async keywordSearch(query)` and `async semanticSearch(query)` returning ranked `post_id` lists, then run your exact same metric code. The metrics do not change, only where the ranked lists come from.
+
+
+## Results and interpretation
+
+Running `node eval.js` produces the table above. Semantic search is better overall, scoring MRR 0.67 and Recall@10 1.00 compared with keyword search at MRR 0.30 and Recall@10 0.60. Keyword search wins on “redis or memcached for caching” and “sql or nosql for a new product,” where the query wording closely matches distinctive terms in the relevant posts. Semantic search wins on the other eight queries, especially symptom-based or paraphrased questions whose meaning is clearer than their exact word overlap. A team should keep keyword search in a hybrid system because its precise-term wins complement semantic search’s broader coverage.
