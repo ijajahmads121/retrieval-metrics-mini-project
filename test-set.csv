@@ -1,0 +1,11 @@
+query,correct_post_ids
+my redis cache keeps showing old data,1002
+how do I add semantic search to a table I already have,1033
+redis or memcached for caching,1020
+why did my query get slower after I added an index,1003
+what does ACID actually guarantee,1030
+how do I keep my postgres online while changing the schema,1013
+my background jobs stop after every deploy,1005
+how do I let my database accept more writes per second,1024;1025
+sql or nosql for a new product,1026
+why does my redis memory keep climbing,1028
